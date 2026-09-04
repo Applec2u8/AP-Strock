@@ -433,6 +433,15 @@ export default function CreateOrder() {
                                         <option value="ນຳໃຊ້ເອງ">ນຳໃຊ້ເອງ</option>
                                     </select>
                                 </div>
+                                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                    <input
+                                        type="checkbox"
+                                        checked={pmType === 'ນຳໃຊ້ເອງ'}
+                                        onChange={e => setPmType(e.target.checked ? 'ນຳໃຊ້ເອງ' : '')}
+                                        id='pmType-checkbox'
+                                    />
+                                    <label htmlFor='pmType-checkbox' id='pmType-label'>ນຳໃຊ້ເອງ</label>
+                                </div>
                                 <div>
                                     <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">ບັນຊີຜູ້ຮັບເງິນ</label>
                                     <select required value={payee} onChange={async (e) => {
