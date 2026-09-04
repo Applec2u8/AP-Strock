@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import Button from '../../components/ui/button/Button';
 import swal from 'sweetalert';
+import { FormDrawer } from '../../components/ui/drawer/FormDrawer';
 
 const LS_KEY_PAYEES = 'ap_payee_names';
 
@@ -22,14 +23,15 @@ interface PaymentModalProps {
   order: any;
   isOpen: boolean;
   onClose: () => void;
-  onRefresh: () => void;
+  setOrders?: any;
+  ordersSnapshot?: any[];
 }
 
-export default function PaymentModal({ order, isOpen, onClose, onRefresh }: PaymentModalProps) {
+export default function PaymentModal({ order, isOpen, onClose, setOrders, ordersSnapshot }: PaymentModalProps) {
   const [payeeName, setPayeeName] = useState('');
   const [amount, setAmount] = useState<number | ''>('');
   const [pmType, setPmType] = useState('ໂອນ');
-  const [loading, setLoading] = useState(false);
+  const [loading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   
   // Local state for pending payments
@@ -80,41 +82,76 @@ export default function PaymentModal({ order, isOpen, onClose, onRefresh }: Paym
       onClose();
       return;
     }
-    try {
-      setLoading(true);
-      const inserts = pendingPayments.map(p => ({
-        order_id: order.id,
-        payee: p.payee,
-        amount: p.amount,
-        pm_type: p.pm_type
-      }));
 
+    const inserts = pendingPayments.map(p => ({
+      order_id: order.id,
+      payee: p.payee,
+      amount: p.amount,
+      pm_type: p.pm_type
+    }));
+
+    const newOrderStatus = totalPaid >= salePrice ? inserts[inserts.length-1].pm_type : 'ທະຍອຍຈ່າຍ';
+
+    // --- Optimistic Update ---
+    if (setOrders) {
+       setOrders((prev: any[]) => prev.map(o => {
+         if (o.id === order.id) {
+           return {
+             ...o,
+             pm_type: newOrderStatus,
+             OrderPayment: [
+               ...(o.OrderPayment || []),
+               ...inserts.map((ins, idx) => ({ ...ins, id: -(Date.now() + idx), created_at: new Date().toISOString() }))
+             ]
+           };
+         }
+         return o;
+       }));
+    }
+
+    setPendingPayments([]);
+    onClose(); // Close modal immediately for snappy feeling
+
+    try {
       const { error } = await supabase.from('OrderPayment').insert(inserts);
       if (error) throw error;
 
-      const newOrderStatus = totalPaid >= salePrice ? inserts[inserts.length-1].pm_type : 'ທະຍອຍຈ່າຍ';
-      await supabase.from('Order').update({ pm_type: newOrderStatus }).eq('id', order.id);
-
-      setPendingPayments([]);
-      onRefresh();
+      const { error: updateError } = await supabase.from('Order').update({ pm_type: newOrderStatus }).eq('id', order.id);
+      if (updateError) throw updateError;
     } catch (err: any) {
+      // --- Rollback ---
+      if (setOrders && ordersSnapshot) {
+         setOrders(ordersSnapshot);
+      }
       swal('Error', 'Failed to save payments: ' + err.message, 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleDeleteExisting = async (paymentId: number) => {
     if (!window.confirm('ຕ້ອງການລຶບລາຍການນີ້ແທ້ບໍ?')) return;
+
+    // --- Optimistic Update ---
+    if (setOrders) {
+       setOrders((prev: any[]) => prev.map(o => {
+          if (o.id === order.id) {
+             return {
+                ...o,
+                OrderPayment: (o.OrderPayment || []).filter((p: any) => p.id !== paymentId)
+             };
+          }
+          return o;
+       }));
+    }
+
     try {
-      setLoading(true);
       const { error } = await supabase.from('OrderPayment').delete().eq('id', paymentId);
       if (error) throw error;
-      onRefresh();
     } catch (err: any) {
+      // --- Rollback ---
+      if (setOrders && ordersSnapshot) {
+         setOrders(ordersSnapshot);
+      }
       swal('Error', 'Failed to delete: ' + err.message, 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -123,16 +160,18 @@ export default function PaymentModal({ order, isOpen, onClose, onRefresh }: Paym
   };
 
   return (
-    <div className="relative z-[99999]">
-      <div className="fixed inset-0 bg-black opacity-50 flex items-center justify-center z-[998] p-4" onClick={onClose}></div>
-      <div className="fixed inset-0 bg-transparent flex items-center justify-center z-[999] p-4 pointer-events-none">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 pointer-events-auto max-h-[90vh] flex flex-col">
-          <div className="flex justify-between items-center mb-4 border-b border-gray-100 dark:border-gray-700 pb-3 shrink-0">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">ຊຳລະເງິນ - ອໍເດີ້ #{order.order || '#'}</h3>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-xl font-bold">&times;</button>
-          </div>
-
-          <div className="overflow-y-auto flex-1 pr-1">
+    <FormDrawer
+      isOpen={isOpen && !!order}
+      onClose={onClose}
+      title={`ຊຳລະເງິນ - ອໍເດີ້ #${order?.order || '#'}`}
+      footer={
+        <Button className="w-full font-medium" variant="primary" onClick={handleSaveAll} disabled={loading || pendingPayments.length === 0}>
+          {loading ? 'ກຳລັງບັນທຶກ...' : `ບັນທຶກທັງໝົດ (${pendingPayments.length} ລາຍການ)`}
+        </Button>
+      }
+    >
+      {order && (
+        <div>
             {/* Balance Summary */}
             <div className="mb-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3 space-y-1">
               <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
@@ -270,15 +309,8 @@ export default function PaymentModal({ order, isOpen, onClose, onRefresh }: Paym
                 </div>
               )}
             </div>
-          </div>
-          
-          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 shrink-0">
-             <Button className="w-full font-medium" variant="primary" onClick={handleSaveAll} disabled={loading || pendingPayments.length === 0}>
-               {loading ? 'ກຳລັງບັນທຶກ...' : `ບັນທຶກທັງໝົດ (${pendingPayments.length} ລາຍການ)`}
-             </Button>
-          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </FormDrawer>
   );
 }

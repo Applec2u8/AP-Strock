@@ -107,5 +107,5 @@ export function useOrders() {
     fetchOrders(1)
   }, []) // run once on mount
 
-  return { orders, loading, error, fetchOrders, page, perPage, totalCount, currentStatusFilter }
+  return { orders, setOrders, loading, error, fetchOrders, page, perPage, totalCount, currentStatusFilter }
 }

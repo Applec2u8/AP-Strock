@@ -111,6 +111,7 @@ export function useProducts() {
 
   return {
     products,
+    setProducts,   // exposed for optimistic updates
     totalCount,
     loading,
     error,

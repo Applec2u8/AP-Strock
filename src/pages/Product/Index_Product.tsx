@@ -5,22 +5,36 @@ import { supabase } from "../../lib/supabase";
 import Button from "../../components/ui/button/Button";
 import { useProducts } from "./useProducts";
 import { useProductActions } from "./useProductActions";
+import { FormDrawer } from "../../components/ui/drawer/FormDrawer";
+import CreateProduct from "./CreateProduct";
+import EditProduct from "./EditProduct";
 
 export default function Index_Product() {
-    const { products, loading, error, fetchProducts, page, perPage, totalCount } = useProducts() as any;
+    const { products, loading, error, fetchProducts, page, perPage, totalCount, setProducts } = useProducts() as any;
 
     // aggregates for visible products on the page
     const productCount = products?.length || 0
-    // remaining inventory and value should reflect stock left
     const totalStock = products.reduce((s: number, p: any) => s + (p.qty_stock || 0), 0)
-    // low‑level filters
+
     const [filterCate, setFilterCate] = useState("");
     const [showArchived] = useState(true);
     const [categories, setCategories] = useState<{ id: number, name: string }[]>([]);
     const [totals, setTotals] = useState({ cost: 0, target: 0, actual: 0 });
     const [loadingTotal, setLoadingTotal] = useState(true)
 
-    // Fetch grand total calculations on mount
+    // ── Drawer state ──────────────────────────────────────────
+    const [drawerMode, setDrawerMode] = useState<"create" | "edit" | null>(null);
+    const [editingProductId, setEditingProductId] = useState<number | null>(null);
+
+    const openCreateDrawer = () => setDrawerMode("create");
+    const openEditDrawer = (id: number) => { setEditingProductId(id); setDrawerMode("edit"); };
+    const closeDrawer = () => { setDrawerMode(null); setEditingProductId(null); };
+    const handleDrawerSuccess = async () => {
+        closeDrawer();
+        await refreshProducts(page);
+    };
+    // ─────────────────────────────────────────────────────────
+
     useEffect(() => {
         const fetchGrandTotal = async () => {
             try {
@@ -32,11 +46,8 @@ export default function Index_Product() {
                 let cost = 0, target = 0, actual = 0;
                 if (allProducts) {
                     allProducts.forEach((p: any) => {
-                        // ต้นทุน = quantity * cost_price
                         cost += (p.quantity || 0) * (p.cost_price || 0);
-                        // เงินเป้า = quantity * sell_price
                         target += (p.quantity || 0) * (p.sell_price || 0);
-                        // ยอด = qty_sale * sell_price
                         actual += (p.qty_sale || 0) * (p.sell_price || 0);
                     })
                 }
@@ -50,15 +61,13 @@ export default function Index_Product() {
         fetchGrandTotal()
     }, [])
 
-    const { handleCreate, handleEdit, handleDelete, exportCsv } =
-        useProductActions(filterCate, fetchProducts, products);
+    const { handleDelete, exportCsv } =
+        useProductActions(filterCate, fetchProducts, products, setProducts);
 
-    // wrapper that applies current filters (category & archived) and optionally page
     const refreshProducts = async (pageNum: number = page) => {
         await fetchProducts({ cate_id: filterCate ? parseInt(filterCate) : undefined, archived: showArchived }, pageNum);
     };
 
-    // initial load & refetch when archived toggle changes
     useEffect(() => {
         refreshProducts(1);
     }, [showArchived]);
@@ -75,7 +84,6 @@ export default function Index_Product() {
         await refreshProducts(1);
     };
 
-    // render logic with filters/search/export
     if (error) {
         return (
             <div className="p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50 dark:bg-red-900 dark:text-red-200">
@@ -84,10 +92,8 @@ export default function Index_Product() {
         );
     }
 
-    // when a row is clicked, prompt the user to either archive the product or increase its quantity
     const plusArchived = async (product: any) => {
         if ((product.qty_stock || 0) > 0) {
-            // only offer prompt when stock exhausted
             return;
         }
 
@@ -95,98 +101,122 @@ export default function Index_Product() {
             title: 'ເລືອກການກະທຳ',
             text: 'ທ່ານຕ້ອງການເກັບສິນຄ້າ ຫຼື ເພີ່ມຈຳນວນ?',
             buttons: {
-                archive: {
-                    text: 'ເກັບ',
-                    value: 'archive',
-                    className: 'swal-button swal-button-info',
-                },
-                plus: {
-                    text: 'ເພີ່ມຈຳນວນ',
-                    value: 'plus',
-                    className: 'swal-button swal-button-success',
-                },
-                cancel: {
-                    text: 'ຍົກເລີກ',
-                    value: null,
-                    className: 'swal-button swal-button--cancel',
-                },
+                archive: { text: 'ເກັບ', value: 'archive', className: 'swal-button swal-button-info' },
+                plus: { text: 'ເພີ່ມຈຳນວນ', value: 'plus', className: 'swal-button swal-button-success' },
+                cancel: { text: 'ຍົກເລີກ', value: null, className: 'swal-button swal-button--cancel' },
             },
             dangerMode: true,
         }).then(async (choice) => {
             if (!choice) return;
             try {
                 if (choice === 'archive') {
-                    // look for any order items referencing this product
-                    const { error: fkErr, count } = await supabase
-                        .from('OrderItem')
-                        .select('pro_id', { count: 'exact' })
-                        .eq('pro_id', product.id);
-                    if (fkErr) throw fkErr;
+                    const snapshot = products;
+                    setProducts((prev: any[]) => prev.filter((p: any) => p.id !== product.id));
+                    const { error: fkErr, count } = await supabase.from('OrderItem').select('pro_id', { count: 'exact' }).eq('pro_id', product.id);
+                    if (fkErr) { setProducts(snapshot); throw fkErr; }
+                    let apiError;
                     if (typeof count === 'number' && count > 0) {
-                        // product is used elsewhere, just mark archived
-                        const { error } = await supabase
-                            .from('Product')
-                            .update({ is_archived: true })
-                            .eq('id', product.id);
-                        if (error) throw error;
-                        swal('ສຳເລັດ!', 'ສິນຄ້າຖືກເກັບແລ້ວ', 'success');
+                        const { error } = await supabase.from('Product').update({ is_archived: true }).eq('id', product.id);
+                        apiError = error;
                     } else {
-                        // no references - safe to delete entirely
-                        const { error } = await supabase
-                            .from('Product')
-                            .delete()
-                            .eq('id', product.id);
-                        if (error) throw error;
-                        swal('ສຳເລັດ!', 'ສິນຄ້າຖືກເກັບແລ້ວ', 'success');
+                        const { error } = await supabase.from('Product').delete().eq('id', product.id);
+                        apiError = error;
                     }
+                    if (apiError) { setProducts(snapshot); throw apiError; }
+                    swal('ສຳເລັດ!', 'ສິນຄ້າຖືກເກັບແລ້ວ', 'success');
                 } else if (choice === 'plus') {
                     const qty = await swal({
-                        title: 'ເພີ່ມຈຳນວນ',
-                        text: 'ໃສ່ຈຳນວນທີ່ຈະເພີ່ມ',
-                        content: {
-                            element: 'input',
-                            attributes: {
-                                type: 'number',
-                                min: 0,
-                                step: 1,
-                                inputMode: 'numeric',
-                                pattern: '[0-9]*'
-                            },
-                        },
-                        buttons: {
-                            confirm: {
-                                text: 'ເພີ່ມ',
-                                closeModal: false,
-                            },
-                        },
+                        title: 'ເພີ່ມຈຳນວນ', text: 'ໃສ່ຈຳນວນທີ່ຈະເພີ່ມ',
+                        content: { element: 'input', attributes: { type: 'number', min: 0, step: 1, inputMode: 'numeric', pattern: '[0-9]*' } },
+                        buttons: { confirm: { text: 'ເພີ່ມ', closeModal: false } },
                     });
                     const add = parseInt(qty as string, 10);
                     if (!isNaN(add) && add > 0) {
                         const newQty = (product.quantity || 0) + add;
                         const newStock = (product.qty_stock || 0) + add;
-                        const { error } = await supabase
-                            .from('Product')
-                            .update({ quantity: newQty, qty_stock: newStock })
-                            .eq('id', product.id);
-                        if (error) throw error;
+                        const snapshot = products;
+                        setProducts((prev: any[]) => prev.map((p: any) => p.id === product.id ? { ...p, quantity: newQty, qty_stock: newStock } : p));
+                        const { error } = await supabase.from('Product').update({ quantity: newQty, qty_stock: newStock }).eq('id', product.id);
+                        if (error) { setProducts(snapshot); throw error; }
                         swal('ສຳເລັດ!', 'ເພີ່ມຈຳນວນສິນຄ້າແລ້ວ', 'success');
                     } else {
                         swal('ຜິດພາດ!', 'ຈຳນວນບໍ່ຖືກຕ້ອງ', 'error');
                     }
                 }
-                // refresh list after modification
-                await refreshProducts(page);
             } catch (err: any) {
                 swal('ຜິດພາດ!', err.message || 'เกิดข้อผิดพลาด', 'error');
             }
         });
     }
 
+    const handleAddStock = async (product: any) => {
+        // Step 1: Get the quantity
+        const qty = await swal({
+            title: 'ປັບປຸງຈຳນວນສິນຄ້າ', 
+            text: 'ໃສ່ຈຳນວນທີ່ຕ້ອງການ',
+            content: { element: 'input', attributes: { type: 'number', min: 1, step: 1, inputMode: 'numeric', pattern: '[0-9]*' } },
+            buttons: { 
+                cancel: { text: 'ຍົກເລີກ', value: null, visible: true, className: 'swal-button swal-button--cancel' },
+                confirm: { text: 'ຕໍ່ໄປ', value: true, closeModal: false } 
+            },
+        });
+        
+        if (!qty) return;
+        
+        const amount = parseInt(qty as string, 10);
+        if (isNaN(amount) || amount <= 0) {
+            swal('ຜິດພາດ!', 'ກະລຸນາໃສ່ຈຳນວນທີ່ຫຼາຍກວ່າ 0', 'error');
+            return;
+        }
+
+        // Step 2: Choose action (Add or Subtract)
+        const action = await swal({
+            title: `ຈຳນວນ: ${amount}`,
+            text: 'ທ່ານຕ້ອງການເພີ່ມ ຫຼື ຫຼຸດຈຳນວນສິນຄ້ານີ້?',
+            buttons: {
+                cancel: { text: 'ຍົກເລີກ', value: null, className: 'swal-button swal-button--cancel' },
+                subtract: { text: 'ຫຼຸດຈຳນວນ (-)', value: 'subtract', className: 'swal-button swal-button-danger' },
+                add: { text: 'ເພີ່ມຈຳນວນ (+)', value: 'add', className: 'swal-button swal-button-success' },
+            },
+            dangerMode: true,
+        });
+
+        if (!action) return;
+
+        let newQty = product.quantity || 0;
+        let newStock = product.qty_stock || 0;
+
+        if (action === 'add') {
+            newQty += amount;
+            newStock += amount;
+        } else if (action === 'subtract') {
+            newQty -= amount;
+            newStock -= amount;
+            // Prevent negative stock
+            if (newStock < 0) newStock = 0;
+            if (newQty < 0) newQty = 0;
+        }
+
+        const snapshot = products;
+        
+        // Optimistic UI update
+        setProducts((prev: any[]) => prev.map((p: any) => p.id === product.id ? { ...p, quantity: newQty, qty_stock: newStock } : p));
+        
+        try {
+            const { error } = await supabase.from('Product').update({ quantity: newQty, qty_stock: newStock }).eq('id', product.id);
+            if (error) throw error;
+            swal('ສຳເລັດ!', 'ປັບປຸງຈຳນວນສິນຄ້າຮຽບຮ້ອຍແລ້ວ', 'success');
+        } catch (err: any) {
+            setProducts(snapshot);
+            swal('ຜິດພາດ!', err.message || 'ເກີດຂໍ້ຜິດພາດໃນການບັນທຶກ', 'error');
+        }
+    }
+
     return (
         <div>
             <div className="flex flex-wrap items-center justify-between gap-2 w-auto">
                 <div className="flex flex-wrap items-center justify-start gap-2">
-                    <Button size="sm" className='h-8 shadow-sm font-medium' variant="primary" onClick={handleCreate}>
+                    <Button size="sm" className='h-8 shadow-sm font-medium' variant="primary" onClick={openCreateDrawer}>
                         + ເພີ່ມລາຍການ
                     </Button>
                     <Button size="sm" className='h-8' variant="outline" onClick={() => refreshProducts(page)}>
@@ -202,7 +232,7 @@ export default function Index_Product() {
                         onChange={handleCategoryFilterChange}
                         className="px-2 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
                     >
-                        <option value="" >ຄົ້ນຫາ / ປະເພດ</option>
+                        <option value="">ຄົ້ນຫາ / ປະເພດ</option>
                         {categories.map(cat => (
                             <option key={cat.id} value={cat.id}>{cat.name}</option>
                         ))}
@@ -239,12 +269,12 @@ export default function Index_Product() {
                         {products.map((product: any) => {
                             const isOutOfStock = (product.qty_stock || 0) === 0;
                             return (
-                                <div 
-                                    key={product.id} 
+                                <div
+                                    key={product.id}
                                     onClick={() => plusArchived(product)}
                                     className={`relative bg-white dark:bg-gray-800 rounded-xl border transition-all duration-200 cursor-pointer overflow-hidden group
-                                        ${isOutOfStock 
-                                            ? 'border-red-200 dark:border-red-900/50 opacity-80 hover:opacity-100' 
+                                        ${isOutOfStock
+                                            ? 'border-red-200 dark:border-red-900/50 opacity-80 hover:opacity-100'
                                             : 'border-gray-200 dark:border-gray-700 hover:border-brand-500 dark:hover:border-brand-500 hover:shadow-md'
                                         }`}
                                 >
@@ -253,10 +283,9 @@ export default function Index_Product() {
                                             ສິນຄ້າໝົດ
                                         </div>
                                     )}
-                                    
+
                                     <div className="p-4">
                                         <div className="flex items-start gap-4">
-                                            {/* Product Image */}
                                             <div className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
                                                 {product.pro_img ? (
                                                     <img src={product.pro_img} alt={product.pro_name} className="w-full h-full object-cover" />
@@ -269,7 +298,6 @@ export default function Index_Product() {
                                                 )}
                                             </div>
 
-                                            {/* Header Info */}
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex justify-between items-start mb-1">
                                                     <h3 className="font-semibold text-gray-900 dark:text-white truncate pr-2" title={product.pro_name}>
@@ -280,7 +308,6 @@ export default function Index_Product() {
                                                 <p className="text-xs text-brand-600 dark:text-brand-400 mb-2 truncate">
                                                     {product.cate_id?.name || "ບໍ່ລະບຸປະເພດ"}
                                                 </p>
-                                                
                                                 <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs text-gray-600 dark:text-gray-300">
                                                     <div>ຕົ້ນທຶນ: <span className="font-medium">{product.cost_price?.toLocaleString() || 0} ₭</span></div>
                                                     <div>ລາຄາຂາຍ: <span className="font-medium text-blue-600 dark:text-blue-400">{product.sell_price?.toLocaleString() || 0} ₭</span></div>
@@ -288,7 +315,6 @@ export default function Index_Product() {
                                             </div>
                                         </div>
 
-                                        {/* Stats Row */}
                                         <div className="mt-4 grid grid-cols-3 gap-2 py-3 border-y border-gray-100 dark:border-gray-700/50">
                                             <div className="text-center">
                                                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">ນຳເຂົ້າ</div>
@@ -306,17 +332,22 @@ export default function Index_Product() {
                                             </div>
                                         </div>
 
-                                        {/* Footer Actions */}
                                         <div className="mt-3 flex items-center justify-between">
                                             <div className="text-xs text-gray-400 dark:text-gray-500 truncate flex-1 pr-2">
                                                 ໂດຍ: {product.user?.fullname || "N/A"}
                                             </div>
                                             <div className="flex gap-1.5 shrink-0">
                                                 <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleEdit(product.id);
-                                                    }}
+                                                    onClick={(e) => { e.stopPropagation(); handleAddStock(product); }}
+                                                    className="p-1.5 bg-green-50 hover:bg-green-100 text-green-600 dark:bg-green-900/30 dark:hover:bg-green-900/50 dark:text-green-400 rounded-md transition-colors"
+                                                    title="ປັບປຸງຈຳນວນ"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                        <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); openEditDrawer(product.id); }}
                                                     className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-400 rounded-md transition-colors"
                                                     title="ແກ້ໄຂ"
                                                 >
@@ -325,10 +356,7 @@ export default function Index_Product() {
                                                     </svg>
                                                 </button>
                                                 <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDelete(product.id);
-                                                    }}
+                                                    onClick={(e) => { e.stopPropagation(); handleDelete(product.id); }}
                                                     className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-900/30 dark:hover:bg-red-900/50 dark:text-red-400 rounded-md transition-colors"
                                                     title="ລົບ"
                                                 >
@@ -346,42 +374,76 @@ export default function Index_Product() {
                 )}
             </div>
 
-            {/* aggregates for current page */}
+            {/* aggregates */}
             <div className="flex items-center justify-end gap-4 mt-4 text-sm text-gray-700 dark:text-gray-300">
                 <div>ລາຍການ: <span className="font-medium">{productCount}</span></div>
                 <div>Stock: <span className="font-medium">{totalStock}</span></div>
             </div>
 
-            {/* grand total (all pages) - cost, target, actual */}
             <div className="flex flex-col gap-3 mt-2 text-sm font-semibold text-gray-900 dark:text-gray-100 border-t border-gray-200 dark:border-gray-700 pt-3">
                 <div className="grid grid-cols-2 md:flex items-center justify-end gap-8">
-                    <div className="">
-                        ຕົ້ນທຸນ: <span className="text-lg text-orange-600 dark:text-orange-400">
-                            {loadingTotal ? '...' : totals.cost.toLocaleString('en-US')} LAK
-                        </span>
-                    </div>
-                    <div className="">
-                        ເງີນເປົ້າ: <span className="text-lg text-blue-600 dark:text-blue-400">
-                            {loadingTotal ? '...' : totals.target.toLocaleString('en-US')} LAK
-                        </span>
-                    </div>
-                    <div className="col-span-2 md:col-span-1">
-                        ຍອດ: <span className="text-lg text-green-600 dark:text-green-400">
-                            {loadingTotal ? '...' : totals.actual.toLocaleString('en-US')} LAK
-                        </span>
-                    </div>
+                    <div>ຕົ້ນທຸນ: <span className="text-lg text-orange-600 dark:text-orange-400">{loadingTotal ? '...' : totals.cost.toLocaleString('en-US')} LAK</span></div>
+                    <div>ເງີນເປົ້າ: <span className="text-lg text-blue-600 dark:text-blue-400">{loadingTotal ? '...' : totals.target.toLocaleString('en-US')} LAK</span></div>
+                    <div className="col-span-2 md:col-span-1">ຍອດ: <span className="text-lg text-green-600 dark:text-green-400">{loadingTotal ? '...' : totals.actual.toLocaleString('en-US')} LAK</span></div>
                 </div>
             </div>
 
-            {/* pagination controls */}
+            {/* pagination */}
             <div className="flex items-center justify-end gap-2 mt-4">
-                <Button size="sm" className="h-6" variant="outline" disabled={page <= 1} onClick={() => refreshProducts(page - 1)}>
-                    Prev
-                </Button>
+                <Button size="sm" className="h-6" variant="outline" disabled={page <= 1} onClick={() => refreshProducts(page - 1)}>Prev</Button>
                 <span className="text-sm text-gray-600 dark:text-gray-400">Page {page} of {Math.ceil(totalCount / perPage) || 1}</span>
-                <Button size="sm" className="h-6" variant="outline" disabled={page >= Math.ceil(totalCount / perPage)} onClick={() => refreshProducts(page + 1)}>
-                    Next
-                </Button>            </div>
+                <Button size="sm" className="h-6" variant="outline" disabled={page >= Math.ceil(totalCount / perPage)} onClick={() => refreshProducts(page + 1)}>Next</Button>
+            </div>
+
+            {/* ── Create Product Drawer ─────────────────────────────── */}
+            <FormDrawer
+                isOpen={drawerMode === "create"}
+                onClose={closeDrawer}
+                title="ເພີ່ມສິນຄ້າໃໝ່"
+                size="lg"
+                footer={
+                    <div className="flex gap-3">
+                        <Button variant="outline" className="flex-1" onClick={closeDrawer}>ຍົກເລີກ</Button>
+                        <button
+                            type="submit"
+                            form="create-product-form"
+                            className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                        >
+                            ບັນທຶກ
+                        </button>
+                    </div>
+                }
+            >
+                <CreateProduct onSuccess={handleDrawerSuccess} onClose={closeDrawer} />
+            </FormDrawer>
+
+            {/* ── Edit Product Drawer ───────────────────────────────── */}
+            <FormDrawer
+                isOpen={drawerMode === "edit"}
+                onClose={closeDrawer}
+                title="ແກ້ໄຂສິນຄ້າ"
+                size="lg"
+                footer={
+                    <div className="flex gap-3">
+                        <Button variant="outline" className="flex-1" onClick={closeDrawer}>ຍົກເລີກ</Button>
+                        <button
+                            type="submit"
+                            form="edit-product-form"
+                            className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                        >
+                            ບັນທຶກ
+                        </button>
+                    </div>
+                }
+            >
+                {editingProductId && (
+                    <EditProduct
+                        productId={editingProductId}
+                        onSuccess={handleDrawerSuccess}
+                        onClose={closeDrawer}
+                    />
+                )}
+            </FormDrawer>
         </div>
     );
 }

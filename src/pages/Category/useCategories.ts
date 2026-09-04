@@ -16,26 +16,26 @@ export function useCategories() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // ── Drawer state ──────────────────────────────────────────────────────────
+  const [drawerMode, setDrawerMode] = useState<'create' | 'edit' | null>(null)
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null)
+
+  const openCreateDrawer = () => { setEditingCategory(null); setDrawerMode('create') }
+  const openEditDrawer = (category: Category) => { setEditingCategory(category); setDrawerMode('edit') }
+  const closeDrawer = () => { setDrawerMode(null); setEditingCategory(null) }
+  // ─────────────────────────────────────────────────────────────────────────
+
   const fetchCategories = async () => {
     try {
       setLoading(true)
       setError(null)
-
       const { data, error: supabaseError, count } = await supabase
         .from('Category')
         .select('*', { count: 'exact' })
         .order('id', { ascending: false })
-
-      if (supabaseError) {
-        throw supabaseError
-      }
-
-      if (data) {
-        setCategories(data as Category[])
-      }
-      if (typeof count === 'number') {
-        setTotalCount(count)
-      }
+      if (supabaseError) throw supabaseError
+      if (data) setCategories(data as Category[])
+      if (typeof count === 'number') setTotalCount(count)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch categories'
       setError(errorMessage)
@@ -46,70 +46,71 @@ export function useCategories() {
   }
 
   const handleDelete = async (id: number) => {
-    if (!confirm('ທ່ານແນ່ໃຈບໍ່ວ່າທ່ານຕ້ອງການລຶບໝວດໝູ່ນີ້?')) return
+    if (!confirm('ທ່ານແນ່ໃຈບໍ່ວ່າທ່ານຕ້ອງການລູບຫມວດຫມນນີ້?')) return
+    const snapshot = categories
+    setCategories(prev => prev.filter(c => c.id !== id))
     try {
-      setLoading(true)
       setError(null)
       const { error: delError } = await supabase.from('Category').delete().eq('id', id)
       if (delError) throw delError
-      setCategories((prev) => prev.filter((c) => c.id !== id))
     } catch (err) {
+      setCategories(snapshot)
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete category'
       setError(errorMessage)
       console.error('Error deleting category:', err)
-    } finally {
-      setLoading(false)
     }
   }
 
-  const handleUpdate = async (category: Category) => {
-    const newName = prompt('Enter new category name', category.name)
-    if (newName === null) return
-    const trimmed = newName.trim()
-    if (!trimmed) return
-    try {
-      setLoading(true)
-      setError(null)
-      const { data, error: upError } = await supabase
-        .from('Category')
-        .update({ name: trimmed })
-        .eq('id', category.id)
-        .select()
-        .single()
-
-      if (upError) throw upError
-      if (data) setCategories((prev) => prev.map((c) => (c.id === category.id ? (data as Category) : c)))
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to update category'
-      setError(errorMessage)
-      console.error('Error updating category:', err)
-    } finally {
-      setLoading(false)
+  /**
+   * Submit handler for CategoryForm (both create & edit).
+   * Called with the category name string.
+   */
+  const handleSubmitForm = async (name: string) => {
+    if (drawerMode === 'create') {
+      await _createCategory(name)
+    } else if (drawerMode === 'edit' && editingCategory) {
+      await _updateCategory(editingCategory.id, name)
     }
+    closeDrawer()
   }
 
-  const handleCreate = async () => {
-    const name = prompt('ເພີມລາຍການໝວດໝູ່ໃໝ່')
-    if (name === null) return
-    const trimmed = name.trim()
-    if (!trimmed) return
+  const _createCategory = async (name: string) => {
+    const tempId = Date.now() * -1
+    const tempItem: Category = { id: tempId, name }
+    setCategories(prev => [tempItem, ...prev])
+    setTotalCount(prev => prev + 1)
     try {
-      setLoading(true)
       setError(null)
       const { data, error: insError } = await supabase
         .from('Category')
-        .insert({ name: trimmed, user_id: user?.id ?? null })
+        .insert({ name, user_id: user?.id ?? null })
         .select()
         .single()
-
       if (insError) throw insError
-      if (data) setCategories((prev) => [data as Category, ...prev])
+      if (data) setCategories(prev => prev.map(c => c.id === tempId ? (data as Category) : c))
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create category'
-      setError(errorMessage)
-      console.error('Error creating category:', err)
-    } finally {
-      setLoading(false)
+      setCategories(prev => prev.filter(c => c.id !== tempId))
+      setTotalCount(prev => prev - 1)
+      throw err
+    }
+  }
+
+  const _updateCategory = async (id: number, name: string) => {
+    const snapshot = categories
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, name } : c))
+    try {
+      setError(null)
+      const { data, error: upError } = await supabase
+        .from('Category')
+        .update({ name })
+        .eq('id', id)
+        .select()
+        .single()
+      if (upError) throw upError
+      if (data) setCategories(prev => prev.map(c => c.id === id ? (data as Category) : c))
+    } catch (err) {
+      setCategories(snapshot)
+      throw err
     }
   }
 
@@ -124,7 +125,12 @@ export function useCategories() {
     error,
     fetchCategories,
     handleDelete,
-    handleUpdate,
-    handleCreate,
+    handleSubmitForm,
+    // drawer state
+    drawerMode,
+    editingCategory,
+    openCreateDrawer,
+    openEditDrawer,
+    closeDrawer,
   }
 }

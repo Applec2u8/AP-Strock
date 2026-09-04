@@ -1,32 +1,25 @@
 import { useCallback } from "react";
-import { useNavigate } from "react-router";
 import { supabase } from "../../lib/supabase";
 import { Product } from "./useProducts";
 
 export function useProductActions(
     filterCate: string,
     fetchProducts: (opts?: { search?: string; cate_id?: number; archived?: boolean }, page?: number) => Promise<void>,
-    products: Product[]
+    products: Product[],
+    setProducts: React.Dispatch<React.SetStateAction<Product[]>>
 ) {
-    const navigate = useNavigate();
-
-    const handleCreate = useCallback(() => {
-        navigate("/product/create");
-    }, [navigate]);
-
     const handleRefresh = useCallback(async () => {
-        // reset back to first page
         await fetchProducts({ cate_id: filterCate ? parseInt(filterCate) : undefined }, 1);
     }, [filterCate, fetchProducts]);
-
-    const handleEdit = useCallback((productId: number) => {
-        navigate(`/product/edit/${productId}`);
-    }, [navigate]);
 
     const handleDelete = useCallback(async (productId: number) => {
         if (!window.confirm(`ທ່ານແນ່ໃຈບໍ່ວ່າຕ້ອງການລົບສິນຄ້ານີ້ ຫຼື ບໍ່?`)) {
             return;
         }
+
+        // --- Optimistic Update: remove from UI immediately ---
+        const snapshot = products;
+        setProducts(prev => prev.filter(p => p.id !== productId));
 
         try {
             const { error } = await supabase
@@ -35,14 +28,14 @@ export function useProductActions(
                 .eq("id", productId);
 
             if (error) throw error;
-            
-            // Refresh the product list
-            await fetchProducts({ cate_id: filterCate ? parseInt(filterCate) : undefined });
+            // Success — no need to refetch the whole list
         } catch (err) {
+            // --- Rollback: restore previous state ---
+            setProducts(snapshot);
             console.error("Error deleting product:", err);
-            alert("ບໍ່ສາມາດລົບສິນຄ້າໄດ້");
+            alert("ບໍ່ສາມາດລົບສິນຄ້າໄດ້ — ກຳລັງຄືນຄ່າເດີມ");
         }
-    }, [filterCate, fetchProducts]);
+    }, [filterCate, products, setProducts]);
 
     const handleFilterChange = useCallback(async (e: React.ChangeEvent<HTMLSelectElement>) => {
         const val = e.target.value;
@@ -129,9 +122,7 @@ export function useProductActions(
     }, [products]);
 
     return {
-        handleCreate,
         handleRefresh,
-        handleEdit,
         handleDelete,
         handleFilterChange,
         exportCsv,

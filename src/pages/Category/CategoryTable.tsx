@@ -13,7 +13,7 @@ interface CategoryTableProps {
   categories: Category[];
   totalCount: number;
   loading: boolean;
-  handleUpdate: (category: Category) => void;
+  onEdit: (category: Category) => void;
   handleDelete: (id: number) => void;
 }
 
@@ -21,7 +21,7 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
   categories,
   totalCount,
   loading,
-  handleUpdate,
+  onEdit,
   handleDelete,
 }) => {
   return (
@@ -95,7 +95,7 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
                   </TableCell>
                   <TableCell className="px-4 py-3 text-gray-500 text-theme-sm dark:text-gray-400">
                     <div className="flex gap-2">
-                      <button onClick={() => handleUpdate(it)} className="p-0">
+                      <button onClick={() => onEdit(it)} className="p-0">
                         <Badge variant="light" color="primary">
                           ແກ້ໄຂ
                         </Badge>

@@ -4,7 +4,8 @@ import swal from 'sweetalert';
 export async function toggleDelivery(
   orderId: number,
   currentlyConfirmed: string,
-  refresh: () => void
+  setOrders: any,
+  ordersSnapshot: any[]
 ) {
   const isDelivered = currentlyConfirmed === 'true';
   const confirmMsg = isDelivered
@@ -21,6 +22,10 @@ export async function toggleDelivery(
     if (!willUpdate) return;
 
     const newStatus = isDelivered ? 'false' : 'true';
+
+    // --- Optimistic Update ---
+    setOrders((prev: any[]) => prev.map(o => o.id === orderId ? { ...o, delivery_confirmed: newStatus } : o));
+
     try {
       const { error } = await supabase
         .from('Order')
@@ -28,8 +33,10 @@ export async function toggleDelivery(
         .eq('id', orderId);
       if (error) throw error;
       swal('ສຳເລັດ!', 'ອັບເດດສະຖານະການຈັດສົງແລ້ວ', 'success');
-      refresh();
+      // No refresh needed
     } catch (err: any) {
+      // --- Rollback ---
+      setOrders(ordersSnapshot);
       swal('ຜິດພາດ!', 'Update failed: ' + err.message, 'error');
     }
   });

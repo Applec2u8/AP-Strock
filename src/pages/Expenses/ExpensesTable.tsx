@@ -14,7 +14,7 @@ interface ExpensesTableProps {
   totalCount: number;
   loading: boolean;
   payees?: { id: number; name: string }[];
-  handleUpdate: (expense: Expense) => void;
+  onEdit: (expense: Expense) => void;
   handleDelete: (id: number) => void;
 }
 
@@ -23,7 +23,7 @@ const ExpensesTable: React.FC<ExpensesTableProps> = ({
   totalCount,
   loading,
   payees = [],
-  handleUpdate,
+  onEdit,
   handleDelete,
 }) => {
   const [selectedPayeeFilter, setSelectedPayeeFilter] = useState<string>('')
@@ -158,7 +158,7 @@ const ExpensesTable: React.FC<ExpensesTableProps> = ({
                     </TableCell>
                     <TableCell className="px-4 py-3 text-gray-500 text-theme-sm dark:text-gray-400">
                       <div className="flex gap-2">
-                        <button onClick={() => handleUpdate(exp)} className="p-0">
+                        <button onClick={() => onEdit(exp)} className="p-0">
                           <Badge variant="light" color="primary">
                             ແກ້ໄຂ
                           </Badge>

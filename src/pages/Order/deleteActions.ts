@@ -1,7 +1,11 @@
 import { supabase } from '../../lib/supabase';
 import swal from 'sweetalert';
 
-export async function deleteOrder(orderId: number, refresh: () => void) {
+export async function deleteOrder(
+  orderId: number, 
+  setOrders: any, 
+  ordersSnapshot: any[]
+) {
   swal({
     title: 'ຢືນຢັນການຍົກເລີກອໍເດີ້',
     text: 'ທ່ານຕ້ອງການຍົກເລີກອໍເດີ້ລາຍການສັ່ງຊື້ ຫຼື ບໍ່?',
@@ -10,6 +14,10 @@ export async function deleteOrder(orderId: number, refresh: () => void) {
     dangerMode: true,
   }).then(async (willDelete) => {
     if (!willDelete) return;
+
+    // --- Optimistic Update: remove order immediately ---
+    setOrders((prev: any[]) => prev.filter(o => o.id !== orderId));
+
     try {      // fetch order items so we can return stock
       const { data: items, error: fetchErr } = await supabase
         .from('OrderItem')
@@ -53,8 +61,10 @@ export async function deleteOrder(orderId: number, refresh: () => void) {
       if (e2) throw e2;
 
       swal('ສຳເລັດ!', 'ລາຍການສັ່ງຊື້ຖືກຍົກເລີກອໍເດີ້ແລ້ວ', 'success');
-      refresh();
+      // No refresh needed due to optimistic update
     } catch (err: any) {
+      // --- Rollback ---
+      setOrders(ordersSnapshot);
       swal('ຜິດພາດ!', 'ຍົກເລີກອໍເດີ້ failed: ' + err.message, 'error');
     }
   });

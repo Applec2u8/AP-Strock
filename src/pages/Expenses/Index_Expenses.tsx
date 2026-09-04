@@ -1,6 +1,8 @@
 import Button from "../../components/ui/button/Button";
 import { useExpenses } from './useExpenses';
 import ExpensesTable from './ExpensesTable';
+import { FormDrawer } from "../../components/ui/drawer/FormDrawer";
+import ExpenseForm from "./ExpenseForm";
 
 export default function Index_Expenses() {
   const {
@@ -10,9 +12,13 @@ export default function Index_Expenses() {
     error,
     payees,
     fetchExpenses,
-    handleCreate,
-    handleUpdate,
     handleDelete,
+    handleSubmitForm,
+    drawerMode,
+    editingExpense,
+    openCreateDrawer,
+    openEditDrawer,
+    closeDrawer,
   } = useExpenses()
 
   const onExport = async () => {
@@ -21,7 +27,6 @@ export default function Index_Expenses() {
       return
     }
 
-    // Prepare data
     const headers = ['#ເຟສ', 'ເວລາ', 'ຈຳນວນເງີນ', 'ຜູ້ຮັບເງີນ', 'ລາຍລະອຽດ', 'ຜູ້ສ້າງ']
     const rows = expenses.map((e: any) => [
       e.phase_id?.phase_name ?? '',
@@ -32,7 +37,6 @@ export default function Index_Expenses() {
       e.user_id?.fullname || '',
     ])
 
-    // Try SheetJS (.xlsx) via dynamic import
     try {
       const XLSX = await import('xlsx')
       const wb = XLSX.utils.book_new()
@@ -46,17 +50,14 @@ export default function Index_Expenses() {
       console.warn('SheetJS not available, falling back to CSV export', xlsxErr)
     }
 
-    // Fallback: CSV download (UTF-8 BOM)
     try {
       const bom = '\uFEFF'
       const titleLine = 'ລາຍການໃຊ້ຈ່າຍ'
       const csvLines = [
-        titleLine,
-        '',
+        titleLine, '',
         headers.join(','),
         ...rows.map((r: any[]) => r.map((c: any) => `"${String(c).replace(/"/g, '""')}"`).join(',')),
       ]
-
       const csv = bom + csvLines.join('\r\n')
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
       const url = URL.createObjectURL(blob)
@@ -77,7 +78,7 @@ export default function Index_Expenses() {
   return (
     <>
       <div className="flex md:justify-end mb-2 gap-1">
-        <Button size="sm" className='h-6' variant="outline" onClick={() => handleCreate()}>
+        <Button size="sm" className='h-6' variant="outline" onClick={openCreateDrawer}>
           ເພີມລາຍການໃຊ້ຈ່າຍ
         </Button>
         <Button size="sm" className='h-6' variant="outline" onClick={fetchExpenses}>
@@ -99,9 +100,38 @@ export default function Index_Expenses() {
         totalCount={totalCount}
         loading={loading}
         payees={payees}
-        handleUpdate={handleUpdate}
         handleDelete={handleDelete}
+        onEdit={openEditDrawer}
       />
+
+      {/* ── Create Expense Drawer ─────────────────────────────── */}
+      <FormDrawer
+        isOpen={drawerMode === 'create'}
+        onClose={closeDrawer}
+        title="ເພີ່ມລາຍການໃຊ້ຈ່າຍ"
+      >
+        <ExpenseForm
+          payees={payees}
+          onSubmit={handleSubmitForm}
+          onCancel={closeDrawer}
+        />
+      </FormDrawer>
+
+      {/* ── Edit Expense Drawer ───────────────────────────────── */}
+      <FormDrawer
+        isOpen={drawerMode === 'edit'}
+        onClose={closeDrawer}
+        title="ແກ້ໄຂລາຍການໃຊ້ຈ່າຍ"
+      >
+        {editingExpense && (
+          <ExpenseForm
+            initialData={editingExpense}
+            payees={payees}
+            onSubmit={handleSubmitForm}
+            onCancel={closeDrawer}
+          />
+        )}
+      </FormDrawer>
     </>
   )
 }

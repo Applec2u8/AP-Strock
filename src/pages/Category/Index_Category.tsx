@@ -1,6 +1,8 @@
 import Button from "../../components/ui/button/Button";
 import { useCategories } from './useCategories';
 import CategoryTable from './CategoryTable';
+import { FormDrawer } from "../../components/ui/drawer/FormDrawer";
+import CategoryForm from "./CategoryForm";
 
 export default function Index_Category() {
   const {
@@ -9,9 +11,13 @@ export default function Index_Category() {
     loading,
     error,
     fetchCategories,
-    handleCreate,
-    handleUpdate,
     handleDelete,
+    handleSubmitForm,
+    drawerMode,
+    editingCategory,
+    openCreateDrawer,
+    openEditDrawer,
+    closeDrawer,
   } = useCategories()
 
   const onExport = async () => {
@@ -20,7 +26,6 @@ export default function Index_Category() {
       return
     }
 
-    // Prepare data
     const headers = ['ຊື່ປະເພດ', 'ລາຍລະອຽດ', 'ວັນທີ່ສ້າງ']
     const rows = categories.map((c: any) => [
       c.name || '',
@@ -28,7 +33,6 @@ export default function Index_Category() {
       c.created_at ? new Date(c.created_at).toLocaleString() : '',
     ])
 
-    // Try SheetJS (.xlsx) via dynamic import
     try {
       const XLSX = await import('xlsx')
       const wb = XLSX.utils.book_new()
@@ -42,17 +46,14 @@ export default function Index_Category() {
       console.warn('SheetJS not available, falling back to CSV export', xlsxErr)
     }
 
-    // Fallback: CSV download (UTF-8 BOM)
     try {
       const bom = '\uFEFF'
       const titleLine = 'ປະເພດສິນຄ້າ'
       const csvLines = [
-        titleLine,
-        '',
+        titleLine, '',
         headers.join(','),
         ...rows.map((r: any[]) => r.map((c: any) => `"${String(c).replace(/"/g, '""')}"`).join(',')),
       ]
-
       const csv = bom + csvLines.join('\r\n')
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
       const url = URL.createObjectURL(blob)
@@ -73,7 +74,7 @@ export default function Index_Category() {
   return (
     <>
       <div className="flex justify-end mb-2 gap-1">
-        <Button size="sm" className='h-6' variant="outline" onClick={handleCreate}>
+        <Button size="sm" className='h-6' variant="outline" onClick={openCreateDrawer}>
           ເພີມລາຍການ
         </Button>
         <Button size="sm" className='h-6' variant="outline" onClick={fetchCategories}>
@@ -94,10 +95,36 @@ export default function Index_Category() {
         categories={categories}
         totalCount={totalCount}
         loading={loading}
-        handleUpdate={handleUpdate}
+        onEdit={openEditDrawer}
         handleDelete={handleDelete}
       />
+
+      {/* ── Create Category Drawer ─────────────────────────────── */}
+      <FormDrawer
+        isOpen={drawerMode === 'create'}
+        onClose={closeDrawer}
+        title="ເພີ່ມປະເພດໃໝ່"
+      >
+        <CategoryForm
+          onSubmit={handleSubmitForm}
+          onCancel={closeDrawer}
+        />
+      </FormDrawer>
+
+      {/* ── Edit Category Drawer ───────────────────────────────── */}
+      <FormDrawer
+        isOpen={drawerMode === 'edit'}
+        onClose={closeDrawer}
+        title="ແກ້ໄຂປະເພດ"
+      >
+        {editingCategory && (
+          <CategoryForm
+            initialName={editingCategory.name}
+            onSubmit={handleSubmitForm}
+            onCancel={closeDrawer}
+          />
+        )}
+      </FormDrawer>
     </>
   )
 }
-
