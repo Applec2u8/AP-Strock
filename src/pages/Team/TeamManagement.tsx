@@ -1,0 +1,221 @@
+import React, { useEffect, useState } from "react";
+import PageMeta from "../../components/common/PageMeta";
+import { supabase } from "../../lib/supabase";
+import { useUser } from "../../context/UserContext";
+import Label from "../../components/form/Label";
+import Input from "../../components/form/input/InputField";
+import Button from "../../components/ui/button/Button";
+import PageBreadcrumb from "../../components/common/PageBreadCrumb";
+
+export default function TeamManagement() {
+  const { user } = useUser();
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [myTeam, setMyTeam] = useState<any>(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const [isOwner, setIsOwner] = useState(false);
+
+  const fetchTeam = async () => {
+    if (!user) return;
+
+    // Use active workspace to determine which team to show
+    const activeWsId = user.active_workspace_id || user.id;
+
+    // Find ALL teams this user is part of (the RLS policy on teams handles this)
+    // teams RLS: owner_id = me OR I am in team_members for that team
+    const { data: allTeams } = await supabase
+      .from("teams")
+      .select("*");
+
+    if (!allTeams || allTeams.length === 0) {
+      setMyTeam(false);
+      setIsOwner(false);
+      return;
+    }
+
+    // Find the team corresponding to the active workspace
+    const activeTeam = allTeams.find((t: any) => String(t.owner_id) === String(activeWsId)) || allTeams[0];
+
+    setMyTeam(activeTeam);
+    setIsOwner(String(activeTeam.owner_id) === String(user.id));
+
+    // Fetch ALL members of this team
+    const { data: members } = await supabase
+      .from("team_members")
+      .select(`role, user_id, users:user_id ( id, fullname, email )`)
+      .eq("team_id", activeTeam.id);
+
+    if (members) setTeamMembers(members);
+  };
+
+  useEffect(() => {
+    fetchTeam();
+  }, [user]);
+
+  const handleInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMessage(null);
+    if (!inviteEmail) return;
+    
+    setLoading(true);
+
+    try {
+      const { data: foundUser, error: findError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("email", inviteEmail)
+        .single();
+
+      if (findError || !foundUser) {
+        setMessage({ type: 'error', text: "ບໍ່ພົບຜູ້ໃຊ້ທີ່ມີອີເມລນີ້ໃນລະບົບ." });
+        setLoading(false);
+        return;
+      }
+
+      const { error: insertError } = await supabase
+        .from("team_members")
+        .insert({
+          team_id: myTeam.id,
+          user_id: foundUser.id,
+          role: "member"
+        });
+
+      if (insertError) {
+        if (insertError.code === "23505") {
+          setMessage({ type: 'error', text: "ຜູ້ໃຊ້ນີ້ຢູ່ໃນທີມແລ້ວ." });
+        } else {
+          setMessage({ type: 'error', text: "ເກີດຂໍ້ຜິດພາດໃນການເພີ່ມເຂົ້າທີມ." });
+        }
+      } else {
+        setMessage({ type: 'success', text: `ເພີ່ມ ${foundUser.fullname || inviteEmail} ເຂົ້າທີມສຳເລັດແລ້ວ!` });
+        setInviteEmail("");
+        fetchTeam();
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: "ເກີດຂໍ້ຜິດພາດ." });
+    }
+
+    setLoading(false);
+  };
+
+  const handleRemove = async (userId: string) => {
+    if (userId === user?.id) {
+      setMessage({ type: 'error', text: "ທ່ານບໍ່ສາມາດລົບຕົວເອງອອກຈາກທີມໄດ້." });
+      return;
+    }
+    
+    if (confirm("ທ່ານແນ່ໃຈບໍ່ວ່າຕ້ອງການລົບຜູ້ໃຊ້ນີ້ອອກຈາກທີມ?")) {
+      const { error } = await supabase
+        .from("team_members")
+        .delete()
+        .eq("team_id", myTeam.id)
+        .eq("user_id", userId);
+        
+      if (!error) {
+        fetchTeam();
+      }
+    }
+  };
+
+
+  return (
+    <>
+      <PageMeta
+        title="ຈັດການທີມ | AP Stock"
+        description="ໜ້າຈັດການສະມາຊິກໃນທີມ"
+      />
+      <PageBreadcrumb pageTitle="ຈັດການທີມ (Team Management)" />
+      
+      <div className="space-y-6">
+        {/* Team Details */}
+        <div className="p-6 bg-white border border-gray-200 rounded-2xl dark:bg-gray-800 dark:border-gray-800">
+          <h3 className="mb-1 text-lg font-semibold text-gray-800 dark:text-white/90">
+            ທີມຂອງຂ້ອຍ: {myTeam === null ? "ກຳລັງໂຫຼດ..." : myTeam === false ? "ບໍ່ພົບທີມ" : myTeam.name}
+          </h3>
+          {myTeam && myTeam !== false && (
+            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+              ບົດບາດຂອງທ່ານ: 
+              <span className={`ml-2 inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${isOwner ? 'bg-brand-100 text-brand-700 dark:bg-brand-500/10 dark:text-brand-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}>
+                {isOwner ? 'ເຈົ້າຂອງ (Owner)' : 'ສະມາຊິກ (Member)'}
+              </span>
+            </p>
+          )}
+          
+          {/* Only owners can invite new members */}
+          {isOwner && (
+            <form onSubmit={handleInvite} className="flex gap-4 items-end mb-6">
+              <div className="flex-1">
+                <Label>ເພີ່ມສະມາຊິກດ້ວຍອີເມລ (Invite User by Email)</Label>
+                <Input
+                  type="email"
+                  placeholder="user@example.com"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  disabled={loading || !myTeam}
+                />
+              </div>
+              <Button type="submit" disabled={loading || !myTeam}>
+                {loading ? "ກຳລັງເພີ່ມ..." : "ເພີ່ມເຂົ້າທີມ"}
+              </Button>
+            </form>
+          )}
+
+          
+          {message && (
+            <div className={`mb-4 px-4 py-3 rounded-lg text-sm font-medium ${message.type === 'success' ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
+              {message.text}
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm text-left">
+              <thead className="text-gray-500 bg-gray-50 dark:bg-gray-700/50 dark:text-gray-400">
+                <tr>
+                  <th className="px-4 py-3 font-medium">ຊື່</th>
+                  <th className="px-4 py-3 font-medium">ອີເມລ</th>
+                  <th className="px-4 py-3 font-medium">ບົດບາດ (Role)</th>
+                  <th className="px-4 py-3 font-medium text-right">ຈັດການ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {teamMembers.map((member) => (
+                  <tr key={member.user_id}>
+                    <td className="px-4 py-3 text-gray-800 dark:text-white/90">
+                      {member.users?.fullname || "ບໍ່ລະບຸຊື່"}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
+                      {member.users?.email}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${member.role === 'owner' ? 'bg-brand-100 text-brand-700 dark:bg-brand-500/10 dark:text-brand-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}>
+                        {member.role === 'owner' ? 'ເຈົ້າຂອງ (Owner)' : 'ສະມາຊິກ (Member)'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {member.role !== 'owner' && (
+                        <button
+                          onClick={() => handleRemove(member.user_id)}
+                          className="text-error-500 hover:text-error-600"
+                        >
+                          ລົບອອກ
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {teamMembers.length === 0 && myTeam !== null && (
+                   <tr>
+                     <td colSpan={4} className="px-4 py-6 text-center text-gray-500">ບໍ່ມີສະມາຊິກໃນທີມ</td>
+                   </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
