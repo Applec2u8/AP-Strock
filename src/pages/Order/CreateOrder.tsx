@@ -22,6 +22,7 @@ export default function CreateOrder() {
     const [loading, setLoading] = useState(false)
     const [items, setItems] = useState<LineItem[]>([])
     const [pmType, setPmType] = useState('ຍັງບໍ່ຈ່າຍ')
+    const [delivery_confirmed, setdelivery_confirmed] = useState(false)
     const [address, setAddress] = useState({ name: '', phone: '', branch: '', address: '' })
     const [promotion, setPromotion] = useState<number | ''>('')
     const [payee, setPayee] = useState('')
@@ -180,7 +181,7 @@ export default function CreateOrder() {
                 sale_price: salePrice,
                 address: address,
                 total_qty: totalQty,
-                delivery_confirmed: 'false',
+                delivery_confirmed: delivery_confirmed,
                 promotion: promotion === '' ? null : promotion,
                 payee: payee || null,
                 user_id: user?.id || null,
@@ -441,6 +442,14 @@ export default function CreateOrder() {
                                         id='pmType-checkbox'
                                     />
                                     <label htmlFor='pmType-checkbox' id='pmType-label'>ນຳໃຊ້ເອງ</label>
+
+                                    <input
+                                        type="checkbox"
+                                        checked={delivery_confirmed === true}
+                                        onChange={e => setdelivery_confirmed(e.target.checked ? true : false)}
+                                        id='delivery_confirmed-checkbox'
+                                    />
+                                    <label htmlFor='delivery_confirmed-checkbox' id='delivery_confirmed-label'>ສົງແລ້ວ</label>
                                 </div>
                                 <div>
                                     <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">ບັນຊີຜູ້ຮັບເງິນ</label>
