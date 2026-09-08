@@ -12,12 +12,60 @@ export interface SaleItem {
 
 export function useSales() {
     const [sales, setSales] = useState<SaleItem[]>([])
+    const [payee, setPayee] = useState<{ name: string; totalAmount: number }[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
 
     const [page, setPage] = useState(1)
     const perPage = 10
     const [totalCount, setTotalCount] = useState(0)
+
+    const fetchPayee = async () => {
+        // Step 1: หา phase ที่ active ก่อน
+        const { data: phases, error: phaseErr } = await supabase
+            .from('Phase')
+            .select('id')
+            .eq('status', 'active')
+
+        if (phaseErr) {
+            console.error('fetchPayee phase error:', phaseErr)
+            return
+        }
+
+        const phaseIds = phases?.map((p: any) => p.id) ?? []
+        if (phaseIds.length === 0) {
+            setPayee([])
+            return
+        }
+
+        // Step 2: ดึง Order ที่อยู่ใน active phase
+        // Order.payee เป็น text ชื่อ admin โดยตรง (ไม่ใช่ FK)
+        const { data, error } = await supabase
+            .from('Order')
+            .select('sale_price, payee')
+            .in('phase_id', phaseIds)
+            .not('payee', 'is', null)
+
+        if (error) {
+            console.error('fetchPayee order error:', error)
+            return
+        }
+
+        // Step 3: Group by payee (text) แล้วรวม sale_price
+        const payeeMap: Record<string, number> = {}
+        if (data) {
+            data.forEach((order: any) => {
+                const name = String(order.payee ?? '').trim()
+                if (!name) return
+                const amount = Number(order.sale_price) || 0
+                payeeMap[name] = (payeeMap[name] || 0) + amount
+            })
+        }
+
+        setPayee(
+            Object.entries(payeeMap).map(([name, totalAmount]) => ({ name, totalAmount }))
+        )
+    }
 
     const fetchSales = useCallback(async (pageNum: number = 1) => {
         try {
@@ -30,7 +78,7 @@ export function useSales() {
             // Fetch order items with product and order info, paginated
             const { data, error: err, count } = await supabase
                 .from('OrderItem')
-                .select(`*, pro_id(*, cate_id(*)), order_id!inner(phase_id!inner(phase_name, status), order, promotion)`, { count: 'exact' })
+                .select(`*, pro_id(*, cate_id(*)), order_id!inner(payee, phase_id!inner(phase_name, status), order, promotion)`, { count: 'exact' })
                 .eq('order_id.phase_id.status', 'active')
                 .order('id', { ascending: false })
                 .range(from, to)
@@ -68,7 +116,8 @@ export function useSales() {
     }, [])
     useEffect(() => {
         fetchSales(1)
+        fetchPayee()
     }, [fetchSales])
 
-    return { sales, loading, error, fetchSales, page, perPage, totalCount }
+    return { sales, loading, error, fetchSales, page, perPage, totalCount, payee }
 }

@@ -176,7 +176,7 @@ export default function Index_Order() {
                         </select>
                     </div>
                     <div className="flex gap-2 w-full md:w-auto">
-                        <Button size="sm" className='h-8 shadow-sm font-medium flex-1 md:flex-none whitespace-nowrap text-xs md:text-sm px-2' variant="primary" onClick={() => navigate('/order/create')}>
+                        <Button size="sm" className='hidden sm:inline-flex h-8 shadow-sm font-medium flex-none whitespace-nowrap text-sm px-2' variant="primary" onClick={() => navigate('/order/create')}>
                             + ເພີ່ມລາຍການ
                         </Button>
                         <Button size="sm" className='h-8 flex-1 md:flex-none whitespace-nowrap text-xs md:text-sm px-2' variant="outline" onClick={() => onExport()}>Export Excel</Button>
@@ -269,8 +269,8 @@ export default function Index_Order() {
                                         const ps = getPaymentStatus(o)
                                         if (ps.status === 'self_use') return <Badge variant="light" color="info" size="sm">ນຳໃຊ້ເອງ</Badge>
                                         if (ps.status === 'paid') return <Badge variant="light" color="success" size="sm">ຈ່າຍຄົບ</Badge>
-                                        if (ps.status === 'partial') return <Badge variant="light" color="warning" size="sm">ຍັງຕິດຄ້າງ</Badge>
-                                        return <Badge variant="light" color="error" size="sm">ຍັງຕິດຄ້າງ</Badge>
+                                        if (ps.status === 'partial') return <Badge variant="light" color="warning" size="sm">ຍັງຕິດຄ້າງ ( <span className="text-yellow-500 font-medium">{ps.remaining.toLocaleString('en-US')} ₭</span> )</Badge>
+                                        return <Badge variant="light" color="error" size="sm">ຍັງຕິດຄ້າງ ( <span className="text-yellow-500 font-medium">{ps.remaining.toLocaleString('en-US')} ₭</span> )</Badge>
                                     })()}
                                 </button>
                                 <button type="button" onClick={() => toggleDelivery(o.id, o.delivery_confirmed, setOrders, orders)}>
@@ -289,14 +289,14 @@ export default function Index_Order() {
 
             {/* Aggregates */}
             <div className="flex items-center justify-end gap-4 mt-4 text-sm text-gray-700 dark:text-gray-300">
-                <div>Count: <span className="font-medium">{ordersCount}</span></div>
-                <div>Items: <span className="font-medium">{ordersTotalQty}</span></div>
-                <div>ເງີນລວມ: <span className="font-medium">{ordersTotalRevenue.toLocaleString('en-US')} ₭</span></div>
+                <div>ຈຳນວນລາຍການ ( ຫນ້າ {page} ): <span className="font-medium">{ordersCount}</span></div>
+                <div>ຈຳນວນສິນຄ້າທັງໝົດ (ຫນ້າ {page} ): <span className="font-medium">{ordersTotalQty}</span></div>
+                <div>ເງີນລວມ (ຫນ້າ {page} ): <span className="font-medium">{ordersTotalRevenue.toLocaleString('en-US')} ₭</span></div>
             </div>
 
             <div className="flex items-center justify-end gap-4 mt-2 text-sm text-gray-700 dark:text-gray-300 border-t border-gray-200 dark:border-gray-700 pt-3">
                 <div className="text-right">
-                    <p className="font-semibold text-gray-900 dark:text-gray-100 mb-2">ຈຳນວນເງິນທີ່ຮັບຈິງຕາມຜູ້ຮັບ:</p>
+                    <p className="font-semibold text-gray-900 dark:text-gray-100 mb-2">ຈຳນວນເງິນຕາມ ຜູ້ຈ່າຍ:</p>
                     <ul className="space-y-1">
                         {Object.entries(totalAllPayeeTotals).length === 0 ? (
                             <li className="text-gray-500">No payees</li>
@@ -338,6 +338,18 @@ export default function Index_Order() {
                 setOrders={setOrders}
                 ordersSnapshot={orders}
             />
+            {/* Mobile FAB - Create Order */}
+            <button
+                onClick={() => navigate('/order/create')}
+                className="md:hidden fixed bottom-6 right-5 z-50 flex items-center gap-2 px-5 py-3.5 rounded-2xl shadow-2xl font-semibold text-white text-sm"
+                style={{
+                    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)',
+                    boxShadow: '0 8px 32px rgba(99, 102, 241, 0.5), 0 2px 8px rgba(0,0,0,0.3)'
+                }}
+            >
+                <span style={{ fontSize: '20px', lineHeight: 1 }}>✚</span>
+                <span>ເພີ່ມລາຍການ</span>
+            </button>
         </div>
     )
 }

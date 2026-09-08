@@ -11,7 +11,7 @@ import {
 } from "../../components/ui/table"
 
 export default function Index_Sale() {
-    const { sales, loading, error, fetchSales, page, perPage, totalCount } = useSales()
+    const { sales, loading, error, fetchSales, page, perPage, totalCount, payee } = useSales()
     const [totalAllRevenue, setTotalAllRevenue] = useState(0)
     const [loadingTotal, setLoadingTotal] = useState(true)
     const [selectedProduct, setSelectedProduct] = useState<number | ''>('')
@@ -307,6 +307,9 @@ export default function Index_Sale() {
                                                 {sale.order_id?.promotion === 0 ? '0' : `${(sale.order_id?.promotion == null ? (sale.price * sale.qty) : (sale.order_id?.promotion * sale.qty)).toLocaleString('en-US')} ₭`}
                                             </TableCell>
                                             <TableCell className="px-4 py-3 text-gray-500 text-start text-theme-sm dark:text-gray-400">
+                                                {sale.order_id?.payee}
+                                            </TableCell>
+                                            <TableCell className="px-4 py-3 text-gray-500 text-start text-theme-sm dark:text-gray-400">
                                                 {new Date(sale.created_at).toLocaleString() || '—'}
                                             </TableCell>
                                         </TableRow>
@@ -328,6 +331,24 @@ export default function Index_Sale() {
             {/* grand total (all pages) */}
             <div className="flex items-center justify-end gap-4 mt-2 text-sm font-semibold text-gray-900 dark:text-gray-100 border-t border-gray-200 dark:border-gray-700 pt-3">
                 <div>ເງີນລວມທັງໝົດ: <span className="text-lg text-blue-600 dark:text-blue-400">{loadingTotal ? '...' : totalAllRevenue.toLocaleString('en-US')} ₭</span></div>
+            </div>
+            <div className="flex items-center justify-end gap-4 mt-2 text-sm text-gray-700 dark:text-gray-300 border-t border-gray-200 dark:border-gray-700 pt-3">
+                <div className="text-right">
+                    <p className="font-semibold text-gray-900 dark:text-gray-100 mb-2">ຈຳນວນເງິນຕາມ ຜູ້ຮັບ:</p>
+                    <ul className="space-y-1">
+                        {loadingTotal ? (
+                            <li className="text-gray-500">...</li>
+                        ) : payee.length === 0 ? (
+                            <li className="text-gray-500">No payees</li>
+                        ) : (
+                            payee.map((p) => (
+                                <li key={p.name}>
+                                    {p.name}: <span className="font-medium text-blue-600 dark:text-blue-400">{p.totalAmount.toLocaleString('en-US')} ₭</span>
+                                </li>
+                            ))
+                        )}
+                    </ul>
+                </div>
             </div>
             <div className="flex items-center justify-end gap-2 mt-4">
                 <Button size="sm" className="h-6" variant="outline" disabled={page <= 1} onClick={() => fetchSales(page - 1)}>
